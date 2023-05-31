@@ -13,6 +13,8 @@ Activate it:
 Install required dependencies:
 `python3 -m pip install -r requirements.txt`
 
+In the project folder, create a file named *acronyms.txt* containing the list of acronyms (i.e. application names) for which you want to extract the information.
+
 Run the script:
 `API_URL=<cluster_api_url> USER=<your_username> PWD=<your_password> python3 ./resource-evaluator.py`
 
