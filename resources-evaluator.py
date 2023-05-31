@@ -1,6 +1,6 @@
 import os
 from kubernetes import client
-# from kubernetes.client.rest import ApiException
+from kubernetes.client.rest import ApiException
 from openshift.dynamic import DynamicClient
 from openshift.helper.userpassauth import OCPLoginConfiguration
 #from requests.packages.urllib3.exceptions import InsecureRequestWarning
@@ -13,7 +13,7 @@ class ResourceEvaluator:
     self.user = user
     self.pwd = pwd
     self.apiURL = apiURL
-    self.acronyms = self.get_acronyms('acronyms.txt')
+    self.acronyms = [] 
     self.projects = []
     self.deployments = []
     self.client = self.get_client()
@@ -32,9 +32,14 @@ class ResourceEvaluator:
   def get_acronyms(self, filename):
     # open file containing acronyms
     with open(filename) as file:
-      self.acronyms = [line.rstrip() for line in file]
+     # print(file.readlines())
+      acronyms = file.readlines()
+      for line in acronyms:
+        self.acronyms.append(line.strip())
+      print(self.acronyms)
 
   def get_ns(self):
+    self.get_acronyms('acronyms.txt')
     projects = self.dynamic_client.resources.get(api_version='project.openshift.io/v1', kind='Project')
     projects_list = projects.get()
     for acronym in self.acronyms:
@@ -54,9 +59,9 @@ class ResourceEvaluator:
       target_dc = deployment_configs.get(namespace=project)
       # target_sts = stateful_sets.get(namespace=project)
       # target_rs = replica_sets.get(namespace=project)
-      if len(target_deployments):
+      if target_deployments:
         self.deployments.extend(target_deployments.items)
-      if len(target_dc):
+      if target_dc:
         self.deployments.extend(target_dc.items)
       # if len(target_sts):
       #   self.deployments.extend(target_sts.items)
@@ -68,36 +73,54 @@ class ResourceEvaluator:
     # for each deployment in a namespace collect: replicas, resource limits and requests, hpa max and min, maxSurge
     # if limits and requests are not specified, get the limits resource in the namespace --> limit range default (=limits) and default requests (=requests)
     replicas = deployment.spec.replicas
-    max_surge = deployment.spec.rollingParams.maxSurge
-    requests = []
-    limits = []
-    hpa_max = 0
-    hpa_min = 0
-    target_cpu = 0
-    current_cpu = 0
-    resources = self.dynamic_client.resources.get(api_version='core/v1', kind='LimitRange')
+    max_surge = ''
+    if deployment.spec.strategy.rollingParams:
+      if deployment.spec.strategy.rollingParams.maxSurge:
+        max_surge = deployment.spec.strategy.rollingParams.maxSurge
+    else:
+      if deployment.spec.strategy.rollingUpdate and deployment.spec.strategy.rollingUpdate.maxSurge:
+        max_surge = deployment.spec.strategy.rollingUpdate.maxSurge
+    requests = ['','']
+    limits = ['','']
+    hpa_max = ''
+    hpa_min = '' 
+    target_cpu = ''
+    current_cpu = ''
+    resources = self.dynamic_client.resources.get(api_version='v1', kind='LimitRange')
     target_resources = resources.get(namespace=namespace)
-    requests.extend(target_resources.spec.limits[1].defaultRequest)
-    limits.extend(target_resources.spec.limits[1].default)
-    if deployment.spec.containers[0].resources:
-      if deployment.spec.containers[0].resources.requests:
-          if deployment.spec.containers[0].resources.requests.cpu:
-            requests[0] = deployment.spec.containers[0].resources.requests.cpu
-          if deployment.spec.containers[0].resources.requests.memory:
-            requests[1] = deployment.spec.containers[0].resources.requests.memory
-      if deployment.spec.containers[0].resources.limits:
-        if deployment.spec.containers[0].resources.limits.cpu:
-          limits[0] = deployment.spec.containers[0].resources.limits.cpu
-        if deployment.spec.containers[0].resources.limits.memory:
-          limits[1] = deployment.spec.containers[0].resources.limits.memory
+    print(target_resources)
+    for resource in target_resources.items:
+      print(resource.spec.limits[1])
+      requests[0] = resource.spec.limits[1].defaultRequest.cpu
+      requests[1] = resource.spec.limits[1].defaultRequest.memory
+      limits[0] = resource.spec.limits[1].default.cpu
+      limits[1] = resource.spec.limits[1].default.memory
+    print(requests)
+    print(limits)
+    if deployment.spec.template.spec.containers[0].resources:
+      if deployment.spec.template.spec.containers[0].resources.requests:
+          if deployment.spec.template.spec.containers[0].resources.requests.cpu:
+            requests[0] = deployment.spec.template.spec.containers[0].resources.requests.cpu
+          if deployment.spec.template.spec.containers[0].resources.requests.memory:
+            requests[1] = deployment.spec.template.spec.containers[0].resources.requests.memory
+      if deployment.spec.template.spec.containers[0].resources.limits:
+        if deployment.spec.template.spec.containers[0].resources.limits.cpu:
+          limits[0] = deployment.spec.template.spec.containers[0].resources.limits.cpu
+        if deployment.spec.template.spec.containers[0].resources.limits.memory:
+          limits[1] = deployment.spec.template.spec.containers[0].resources.limits.memory
     # for each deployment look for the corresponding hpa (same name) and get: min replicas, max replicas, target cpu utilization, current cpu utilization
-    hpas = self.dynamic_client.resources.get(api_version='autoscaling/v1', kind='HorizontalPodAutoscaler')
-    target_hpa = hpas.get(namespace=namespace,name=deployment.metadata.name)
-    if target_hpa:
-      hpa_max = target_hpa.spec.maxReplicas
-      hpa_min = target_hpa.spec.minReplicas
-      target_cpu = target_hpa.spec.targetCPUUtilizationPercentage
-      current_cpu = target_hpa.status.currentCPUUtilizationPercentage
+    try:
+      hpas = self.dynamic_client.resources.get(api_version='autoscaling/v1', kind='HorizontalPodAutoscaler')
+      target_hpa = hpas.get(namespace=namespace)
+      if target_hpa.items:
+        for hpa in target_hpa.items:
+          if hpa.metadata.name == deployment.metadata.name:
+            hpa_max = hpa.spec.maxReplicas
+            hpa_min = hpa.spec.minReplicas
+            target_cpu = hpa.spec.targetCPUUtilizationPercentage
+            current_cpu = hpa.status.currentCPUUtilizationPercentage
+    except ApiException as error:
+      print(error)
     # print these info in a csv using the function below
     self.build_csv(outputfile, namespace, deployment.metadata.name, replicas, limits, requests, hpa_max, hpa_min, target_cpu, current_cpu, max_surge)
 
@@ -123,7 +146,7 @@ if __name__ == '__main__':
   USER = os.getenv('USER')
   PWD = os.getenv('PWD')
 
-  re = ResourceEvaluator(API_URL, USER, PWD)
+  re = ResourceEvaluator(USER, PWD, API_URL)
 
   re.init_csv()
   re.get_ns()
