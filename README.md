@@ -20,6 +20,6 @@ In the project folder, create a file named *acronyms.txt* containing the list of
 
 Run the script:
 
-`API_URL=<cluster_api_url> USER=<your_username> PWD=<your_password> python3 resource-evaluator.py`
+`API_URL=<cluster_api_url> USER=<your_username> python3 resource-evaluator.py`
 
 At the end of the execution, you will find the results of the extraction in a file named *output.csv*.

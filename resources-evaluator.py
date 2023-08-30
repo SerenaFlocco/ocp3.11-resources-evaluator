@@ -5,6 +5,7 @@ from openshift.dynamic import DynamicClient
 from openshift.helper.userpassauth import OCPLoginConfiguration
 import requests
 from requests.packages.urllib3.exceptions import InsecureRequestWarning
+from getpass import getpass
 import csv
 import re
 
@@ -178,7 +179,8 @@ if __name__ == '__main__':
 
   API_URL = os.getenv('API_URL')
   USER = os.getenv('USER')
-  PWD = os.getenv('PWD')
+  # PWD = os.getenv('PWD')
+  PWD = getpass("Password: ")
 
   re = ResourceEvaluator(USER, PWD, API_URL)
 
