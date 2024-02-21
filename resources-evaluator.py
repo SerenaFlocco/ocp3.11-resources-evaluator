@@ -7,19 +7,18 @@ import requests
 from requests.packages.urllib3.exceptions import InsecureRequestWarning
 from getpass import getpass
 import csv
-import re
 
 # Disable SSL Warnings
 requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
 
 class ResourceEvaluator:
-  
+
   def __init__(self, user, pwd, apiURL):
-    
+
     self.user = user
     self.pwd = pwd
     self.apiURL = apiURL
-    self.acronyms = [] 
+    self.acronyms = []
     self.projects = []
     self.deployments = []
     self.client = self.get_client()
@@ -34,7 +33,7 @@ class ResourceEvaluator:
 
   def get_client(self):
     return self.oc_login()
-    
+
   def get_acronyms(self, filename):
     # open file containing acronyms
     with open(filename) as file:
@@ -91,15 +90,15 @@ class ResourceEvaluator:
     requests = ['','']
     limits = ['','']
     hpa_max = ''
-    hpa_min = '' 
+    hpa_min = ''
     target_cpu = ''
     current_cpu = ''
     try:
       resources = self.dynamic_client.resources.get(api_version='v1', kind='LimitRange')
       target_resources = resources.get(namespace=namespace)
-      # print(target_resources)
+      #print(target_resources)
       for resource in target_resources.items:
-        print(resource.spec.limits[1])
+        #print(resource.spec.limits[1])
         requests[0] = resource.spec.limits[1].defaultRequest.cpu
         requests[1] = resource.spec.limits[1].defaultRequest.memory
         limits[0] = resource.spec.limits[1].default.cpu
@@ -108,21 +107,18 @@ class ResourceEvaluator:
       # print(limits)
     except ApiException as e:
       print(e)
-    for container in deployment.spec.template.spec.containers:
-      if container.resources and container.resources.requests:
-        if container.resources.requests.cpu:
-          cpu_converted = self.convert_cpu_value(container.resources.requests.cpu)
-          requests[0] += cpu_converted
-        if container.resources.requests.memory:
-          memory_converted = self.convert_memory_value(container.resources.requests.memory)
-          requests[1] += memory_converted
-      if container.resources and container.resources.limits:
-        if container.resources.limits.cpu:
-          cpu_converted = self.convert_cpu_value(container.resources.limits.cpu)
-          limits[0] += cpu_converted
-        if container.resources.limits.memory:
-          memory_converted = self.convert_memory_value(container.resources.limits.memory)
-          limits[1] += memory_converted
+    #print(len(deployment.spec.template.spec.containers))
+    if deployment.spec.template.spec.containers[0].resources:
+      if deployment.spec.template.spec.containers[0].resources.requests:
+          if deployment.spec.template.spec.containers[0].resources.requests.cpu:
+            requests[0] = deployment.spec.template.spec.containers[0].resources.requests.cpu
+          if deployment.spec.template.spec.containers[0].resources.requests.memory:
+            requests[1] = deployment.spec.template.spec.containers[0].resources.requests.memory
+      if deployment.spec.template.spec.containers[0].resources.limits:
+        if deployment.spec.template.spec.containers[0].resources.limits.cpu:
+          limits[0] = deployment.spec.template.spec.containers[0].resources.limits.cpu
+        if deployment.spec.template.spec.containers[0].resources.limits.memory:
+          limits[1] = deployment.spec.template.spec.containers[0].resources.limits.memory
     # for each deployment look for the corresponding hpa (same name) and get: min replicas, max replicas, target cpu utilization, current cpu utilization
     try:
       hpas = self.dynamic_client.resources.get(api_version='autoscaling/v1', kind='HorizontalPodAutoscaler')
@@ -154,26 +150,6 @@ class ResourceEvaluator:
       writer = csv.writer(outputfile)
       writer.writerow(fields)
     outputfile.close()
-
-  def convert_cpu_value(value):
-    new_value = 0
-    number = re.findall(r'\d+',value)
-    if value.isdigit():
-      if len(value) == 1:
-        new_value = number*1000
-      else:
-        new_value = number
-    return new_value
-
-  def convert_memory_value(value):
-    new_value = 0
-    number = re.findall(r'\d+',value)
-    if value.isdigit():
-      if len(value) == 1:
-        new_value = number*1024
-      else:
-        new_value = number
-    return new_value
 
 if __name__ == '__main__':
 
